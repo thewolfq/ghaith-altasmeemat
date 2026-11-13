@@ -18,32 +18,35 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract and Debug Project ZIP
+      - name: Extract and Find Project Root
         run: |
           mkdir -p extracted
           unzip -o ghaith-altasmeemat-github.zip -d extracted
-          echo "--- محتويات المجلد المستخرج (أول 20 ملفاً) ---"
-          find extracted -maxdepth 2 -type f | head -20
-          if [ ! -f extracted/package.json ]; then
-            echo "خطأ: لم يتم العثور على package.json في الجذر."
+          
+          # البحث عن مجلد package.json أينما كان
+          PACKAGE_DIR=$(find extracted -name package.json -maxdepth 4 -exec dirname {} \; | head -n 1)
+          
+          if [ -z "$PACKAGE_DIR" ]; then
+            echo "خطأ: لم يتم العثور على package.json داخل الـ ZIP مطلقاً."
             exit 1
           fi
-          echo "تم العثور على package.json بنجاح."
+          
+          echo "تم العثور على المشروع في المسار: $PACKAGE_DIR"
+          # حفظ المسار لاستخدامه في الخطوات التالية
+          echo "PROJECT_DIR=$PACKAGE_DIR" >> $GITHUB_ENV
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # تم إزالة cache-dependency-path مؤقتاً لتجنب خطأ عدم وجود الملف
-          # cache: 'npm'
 
       - name: Install Dependencies
         run: npm install
-        working-directory: ./extracted
+        working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Build Web App (Vite)
         run: npm run build
-        working-directory: ./extracted
+        working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -64,18 +67,18 @@ jobs:
 
       - name: Sync Capacitor
         run: npx cap sync android
-        working-directory: ./extracted
+        working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Build Android APK (Debug)
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
-        working-directory: ./extracted
+        working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Ghaith-APK
-          path: extracted/android/app/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
