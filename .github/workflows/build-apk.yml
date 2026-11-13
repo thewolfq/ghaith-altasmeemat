@@ -15,30 +15,23 @@ jobs:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Extract and Find Project Root
         run: |
           mkdir -p extracted
           unzip -o ghaith-altasmeemat-github.zip -d extracted
-          
-          # البحث عن مجلد package.json أينما كان
-          PACKAGE_DIR=$(find extracted -name package.json -maxdepth 4 -exec dirname {} \; | head -n 1)
-          
+          PACKAGE_DIR=$(find extracted -name package.json -not -path "*/node_modules/*" -not -path "*/functions/*" | awk '{print length, $0}' | sort -n | head -n 1 | cut -d' ' -f2- | xargs dirname)
           if [ -z "$PACKAGE_DIR" ]; then
-            echo "خطأ: لم يتم العثور على package.json داخل الـ ZIP مطلقاً."
+            echo "package.json not found"
             exit 1
           fi
-          
-          echo "تم العثور على المشروع في المسار: $PACKAGE_DIR"
-          # حفظ المسار لاستخدامه في الخطوات التالية
+          echo "Project: $PACKAGE_DIR"
           echo "PROJECT_DIR=$PACKAGE_DIR" >> $GITHUB_ENV
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install Dependencies
         run: npm install
@@ -48,22 +41,22 @@ jobs:
         run: npm run build
         working-directory: ${{ env.PROJECT_DIR }}
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Install Android SDK packages
         shell: bash
         run: |
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager not found under $ANDROID_HOME/cmdline-tools"
-            exit 1
-          fi
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" --install "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Add Android platform if missing
+        run: |
+          if [ ! -d android ]; then npx cap add android; fi
+        working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Sync Capacitor
         run: npx cap sync android
